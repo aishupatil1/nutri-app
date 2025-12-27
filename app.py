@@ -13,6 +13,50 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 # ------------------------------
+# PAGE CONFIG
+# ------------------------------
+st.set_page_config(page_title="NutriVision", page_icon="🥗", layout="wide")
+
+# ------------------------------
+# DARK UI (RESTORED)
+# ------------------------------
+st.markdown("""
+<style>
+html, body, [class*="css"] {
+    background:#0E1117 !important;
+    color:#EAEAEA !important;
+}
+.stApp {
+    background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+}
+section[data-testid="stSidebar"] {
+    background:#000;
+}
+section[data-testid="stSidebar"] * {
+    color:#EAEAEA !important;
+}
+input {
+    background:#1E1E1E !important;
+    color:#EAEAEA !important;
+}
+.stButton>button {
+    background:linear-gradient(90deg,#00c6ff,#0072ff);
+    color:white !important;
+    font-size:16px;
+    font-weight:700;
+    border-radius:14px;
+}
+.food-box {
+    background:#121212;
+    padding:25px;
+    border-radius:18px;
+    box-shadow:0 0 25px rgba(0,255,255,.2);
+    white-space:pre-wrap;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ------------------------------
 # DATABASE
 # ------------------------------
 DB = "nutrivision.db"
@@ -64,15 +108,10 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # ------------------------------
-# UI CONFIG
-# ------------------------------
-st.set_page_config("NutriVision", "🥗")
-
-# ------------------------------
 # LOGIN
 # ------------------------------
 if not st.session_state.logged_in:
-    st.title("🔐 NutriVision Authentication")
+    st.markdown("## 🔐 NutriVision Authentication")
     t1, t2 = st.tabs(["Login", "Create Account"])
 
     with t1:
@@ -88,7 +127,7 @@ if not st.session_state.logged_in:
                 st.session_state.daily_used = 0
                 st.rerun()
             else:
-                st.error("Invalid credentials")
+                st.error("Invalid username or password")
 
     with t2:
         nu = st.text_input("New Username")
@@ -102,7 +141,7 @@ if not st.session_state.logged_in:
                     con = db(); cur = con.cursor()
                     cur.execute("INSERT INTO users VALUES (?,?)", (nu, hash_pass(np)))
                     con.commit(); con.close()
-                    st.success("Account created")
+                    st.success("Account created! Login now.")
                 except:
                     st.error("Username already exists")
 
@@ -112,7 +151,7 @@ if not st.session_state.logged_in:
 # SIDEBAR
 # ------------------------------
 st.sidebar.title("📤 Upload Food / Beverage")
-img = st.sidebar.file_uploader("Upload Image", ["jpg","jpeg","png"])
+img = st.sidebar.file_uploader("Food Image", ["jpg","jpeg","png"])
 qty = st.sidebar.text_input("Quantity", "100g")
 
 daily_limit = st.sidebar.number_input(
@@ -123,20 +162,17 @@ daily_limit = st.sidebar.number_input(
     step=100
 )
 
-if st.sidebar.button("Logout"):
+if st.sidebar.button("🚪 Logout"):
     st.session_state.logged_in = False
     st.rerun()
 
 # ------------------------------
-# MAIN UI
+# HEADER
 # ------------------------------
-st.title("🥗 NutriVision")
-st.write(f"Welcome **{st.session_state.username}**")
+st.markdown("# 🥗 NutriVision")
+st.markdown(f"### Welcome, {st.session_state.username}")
 
-st.info(
-    f"🔥 Calories Consumed Today: "
-    f"{st.session_state.daily_used} / {daily_limit} kcal"
-)
+st.info(f"🔥 Calories Consumed Today: {st.session_state.daily_used} / {daily_limit} kcal")
 
 if st.session_state.daily_used > daily_limit:
     st.error("⚠ Daily calorie limit exceeded!")
@@ -160,11 +196,9 @@ def extract_health(text):
     m = re.search(r'Healthiness:\s*(Healthy|Moderate|Unhealthy)', text, re.I)
     return m.group(1) if m else "Unknown"
 
-def extract_kids_suitability(text, health):
-    match = re.search(r'Is it Suitable for Kids.*?(Yes|No)', text, re.I)
-    if match:
-        return match.group(1)
-
+def extract_kids(text, health):
+    if re.search(r'Kids.*No', text, re.I):
+        return "No"
     if health.lower() == "unhealthy":
         return "No"
     if any(x in text.lower() for x in ["coffee", "tea", "caffeine"]):
@@ -180,7 +214,7 @@ def ai(prompt, image):
     return model.generate_content([prompt, image]).text
 
 # ------------------------------
-# PDF
+# PDF (FIXED – NO KEYERROR)
 # ------------------------------
 def generate_pdf(text, username):
     buf = BytesIO()
@@ -189,15 +223,17 @@ def generate_pdf(text, username):
                             topMargin=50,bottomMargin=40)
 
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle("Title", fontSize=18, spaceAfter=20, alignment=1))
+    styles.add(ParagraphStyle(
+        name="MyTitle",
+        fontSize=18,
+        spaceAfter=20,
+        alignment=1
+    ))
 
     story = []
-    story.append(Paragraph("🥗 NutriVision – Food & Beverage Report", styles["Title"]))
+    story.append(Paragraph("🥗 NutriVision – Nutrition Report", styles["MyTitle"]))
     story.append(Paragraph(f"<b>User:</b> {username}", styles["Normal"]))
-    story.append(Paragraph(
-        f"<b>Date:</b> {datetime.now().strftime('%d-%m-%Y %H:%M')}",
-        styles["Normal"]
-    ))
+    story.append(Paragraph(f"<b>Date:</b> {datetime.now().strftime('%d-%m-%Y %H:%M')}", styles["Normal"]))
     story.append(Spacer(1, 12))
 
     for line in text.split("\n"):
@@ -218,14 +254,14 @@ def generate_pdf(text, username):
 prompt = f"""
 You are an expert nutritionist.
 
-IMPORTANT RULES:
+RULES:
 - Follow format strictly
 - Use ONLY numbers for macros
-- Always decide healthiness
+- Mention calories in kcal
+- Decide health clearly
 - If unhealthy, suggest ingredient alternatives
 - ALWAYS mention kids suitability
-- Mention calories clearly in kcal
-- Support beverages like tea, coffee, milk, juice
+- Support beverages like tea, coffee, milk
 
 Quantity: {qty}
 
@@ -246,7 +282,7 @@ Healthiness:
 Healthy / Moderate / Unhealthy
 
 If Unhealthy – Ingredient Alternatives:
-- (write alternatives or Not required)
+-
 
 Is it Suitable for Kids:
 Yes / No with reason
@@ -265,42 +301,32 @@ if st.button("Analyse Food"):
             image_data = {"mime_type": img.type, "data": img.getvalue()}
             text = ai(prompt, image_data)
 
-        # Extract calories
         calories = extract_calories(text)
         st.session_state.daily_used += calories
 
-        # Health indicator
         health = extract_health(text)
         if health.lower() == "unhealthy":
-            st.error("🔴 Unhealthy")
+            st.error("🔴 Unhealthy Food")
         elif health.lower() == "moderate":
             st.warning("🟡 Consume in Moderation")
         else:
-            st.success("🟢 Healthy")
+            st.success("🟢 Healthy Choice")
 
-        # Kids suitability
-        kids = extract_kids_suitability(text, health)
+        kids = extract_kids(text, health)
         if kids == "No":
             st.warning("🚫 Not suitable for kids")
         else:
             st.success("👶 Suitable for kids")
 
-        st.markdown(text)
+        st.markdown(f"<div class='food-box'>{text}</div>", unsafe_allow_html=True)
 
-        # Pie chart
         p, c, f = extract_macros(text)
         if p is not None and c is not None and f is not None and (p+c+f) > 0:
             fig, ax = plt.subplots()
-            ax.pie([p, c, f],
-                   labels=["Protein", "Carbs", "Fat"],
-                   autopct="%1.1f%%",
-                   startangle=90)
+            ax.pie([p,c,f], labels=["Protein","Carbs","Fat"], autopct="%1.1f%%", startangle=90)
             ax.set_title("Macronutrient Distribution")
             st.pyplot(fig)
-        else:
-            st.info("No significant macronutrients to display pie chart.")
 
-        # Save history
         con = db(); cur = con.cursor()
         cur.execute("""
             INSERT INTO history(username,date,meal,details,calories)
@@ -314,7 +340,6 @@ if st.button("Analyse Food"):
         ))
         con.commit(); con.close()
 
-        # PDF
         st.download_button(
             "📄 Download PDF Report",
             generate_pdf(text, st.session_state.username),
@@ -324,7 +349,7 @@ if st.button("Analyse Food"):
 # ------------------------------
 # HISTORY
 # ------------------------------
-st.subheader("📜 History")
+st.markdown("## 📜 History")
 con = db(); cur = con.cursor()
 cur.execute("""
     SELECT date, meal, calories, details
