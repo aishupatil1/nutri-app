@@ -7,11 +7,9 @@ from io import BytesIO
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-# PDF
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.styles import getSampleStyleSheet
 
 # ------------------------------
 # DATABASE
@@ -45,74 +43,34 @@ def init_db():
 init_db()
 
 # ------------------------------
-# PASSWORD HASH
+# AUTH
 # ------------------------------
 def hash_pass(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
-# ------------------------------
-# SESSION
-# ------------------------------
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
     st.session_state.username = ""
+if "daily_cal" not in st.session_state:
+    st.session_state.daily_cal = 0
 
 # ------------------------------
-# API KEY
+# API
 # ------------------------------
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
 # ------------------------------
-# PAGE CONFIG
+# UI
 # ------------------------------
 st.set_page_config("NutriVision", "🥗")
 
 # ------------------------------
-# DARK CSS
-# ------------------------------
-st.markdown("""
-<style>
-html, body, [class*="css"] {
-    background:#0E1117 !important;
-    color:#EAEAEA !important;
-}
-.stApp {
-    background: linear-gradient(135deg,#0f2027,#203a43,#2c5364);
-}
-section[data-testid="stSidebar"] {
-    background:#000;
-}
-section[data-testid="stSidebar"] * {
-    color:#EAEAEA !important;
-}
-input {
-    background:#1E1E1E !important;
-    color:#EAEAEA !important;
-}
-.stButton>button {
-    background:linear-gradient(90deg,#00c6ff,#0072ff);
-    color:white !important;
-    font-size:18px;
-    font-weight:700;
-    border-radius:14px;
-}
-.food-box {
-    background:#121212;
-    padding:25px;
-    border-radius:18px;
-    box-shadow:0 0 25px rgba(0,255,255,.2);
-    white-space:pre-wrap;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# ------------------------------
-# AUTH
+# LOGIN
 # ------------------------------
 if not st.session_state.logged_in:
-    st.markdown("## 🔐 NutriVision Authentication")
+    st.title("🔐 NutriVision Authentication")
     t1, t2 = st.tabs(["Login", "Create Account"])
 
     with t1:
@@ -127,46 +85,44 @@ if not st.session_state.logged_in:
                 st.session_state.username = u
                 st.rerun()
             else:
-                st.error("Invalid username or password")
+                st.error("Invalid credentials")
 
     with t2:
         nu = st.text_input("New Username")
         np = st.text_input("New Password", type="password")
         cp = st.text_input("Confirm Password", type="password")
-        if st.button("Create Account"):
-            if not nu or not np:
-                st.warning("All fields required")
-            elif np != cp:
-                st.error("Passwords do not match")
+        if st.button("Create"):
+            if np != cp:
+                st.error("Passwords mismatch")
             else:
                 try:
                     con = db(); cur = con.cursor()
-                    cur.execute("INSERT INTO users VALUES (?,?)",
-                                (nu, hash_pass(np)))
+                    cur.execute("INSERT INTO users VALUES (?,?)", (nu, hash_pass(np)))
                     con.commit(); con.close()
-                    st.success("Account created! Login now.")
+                    st.success("Account created")
                 except:
-                    st.error("Username already exists")
+                    st.error("Username exists")
 
     st.stop()
 
 # ------------------------------
 # SIDEBAR
 # ------------------------------
-st.sidebar.title("📤 Upload Food")
-img = st.sidebar.file_uploader("Food Image", ["jpg","jpeg","png"])
+st.sidebar.title("🍽 Food Input")
+img = st.sidebar.file_uploader("Upload food image", ["jpg","png","jpeg"])
 qty = st.sidebar.text_input("Quantity", "100g")
+daily_limit = st.sidebar.number_input("Daily Calorie Limit", 1200, 3000, 2000)
 
-if st.sidebar.button("🚪 Logout"):
+if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
-    st.session_state.username = ""
     st.rerun()
 
 # ------------------------------
-# HEADER
+# MAIN
 # ------------------------------
-st.markdown("# 🥗 NutriVision")
-st.markdown(f"### Welcome, {st.session_state.username}")
+st.title("🥗 NutriVision")
+st.write(f"Welcome **{st.session_state.username}**")
+st.info(f"🔥 Daily Calories Used: {st.session_state.daily_cal} / {daily_limit}")
 
 if img:
     st.image(Image.open(img), use_container_width=True)
@@ -174,19 +130,12 @@ if img:
 # ------------------------------
 # HELPERS
 # ------------------------------
-def clean_text(t):
-    t = re.sub(r'\*\*(.*?)\*\*', r'\1', t)
-    t = re.sub(r'__', '', t)
-    return t
-
-def extract_macros(text):
+def extract_macros(t):
     try:
-        p = re.search(r'protein[:\s]+(\d+)', text, re.I)
-        c = re.search(r'carb\w*[:\s]+(\d+)', text, re.I)
-        f = re.search(r'fat\w*[:\s]+(\d+)', text, re.I)
-        if not (p and c and f):
-            return None, None, None
-        return int(p.group(1)), int(c.group(1)), int(f.group(1))
+        p = int(re.search(r'Protein:\s*(\d+)', t).group(1))
+        c = int(re.search(r'Carbs:\s*(\d+)', t).group(1))
+        f = int(re.search(r'Fat:\s*(\d+)', t).group(1))
+        return p, c, f
     except:
         return None, None, None
 
@@ -194,45 +143,66 @@ def ai(prompt, image):
     model = genai.GenerativeModel("models/gemini-2.5-flash")
     return model.generate_content([prompt, image]).text
 
-# ------------------------------
-# PDF
-# ------------------------------
-def generate_pdf(text):
+def pdf(text):
     buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=letter,
-        leftMargin=40, rightMargin=40,
-        topMargin=50, bottomMargin=50
-    )
+    doc = SimpleDocTemplate(buf, pagesize=letter)
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(
-        "Body", fontSize=11, leading=15, alignment=TA_LEFT
-    ))
     story = []
-    for line in text.split("\n"):
-        if line.strip():
-            story.append(Paragraph(line, styles["Body"]))
-        else:
-            story.append(Spacer(1, 10))
+    for l in text.split("\n"):
+        story.append(Paragraph(l, styles["Normal"]))
+        story.append(Spacer(1, 8))
     doc.build(story)
     buf.seek(0)
     return buf
 
 # ------------------------------
-# PROMPT
+# PROMPT (ALL FEATURES)
 # ------------------------------
 prompt = f"""
 You are a nutritionist.
+
+RULES:
+- Use only numbers for macros
+- Be short and clear
+- Always decide health status
+- Give allergy warning
+- Suggest healthier alternative if unhealthy
+- Decide age suitability
+- Suggest best time to eat
+
 Quantity: {qty}
 
 Meal Name:
-Ingredients and Calories:
+Food Category:
+Calories:
 Macronutrient Profile:
-Protein: X
-Carbs: X
-Fats: X
-Fiber: X grams
-Healthiness:
+Protein: 0
+Carbs: 0
+Fat: 0
+Fiber: 0
+
+Health Benefits:
+-
+
+Is it Healthy:
+Healthy / Moderate / Unhealthy with reason
+
+Allergy Warning:
+-
+
+If Unhealthy – Ingredient Improvement:
+-
+
+Healthier Alternative Dish:
+-
+
+Suitable For:
+Kids:
+Teens:
+Adults:
+Elderly:
+
+Best Time to Eat:
 Recommendation:
 """
 
@@ -241,68 +211,51 @@ Recommendation:
 # ------------------------------
 if st.button("Analyse Food"):
     if not img:
-        st.warning("Upload an image first")
+        st.warning("Upload an image")
     else:
-        image_data = {"mime_type": img.type, "data": img.getvalue()}
-        raw = ai(prompt, image_data)
-        text = clean_text(raw)
+        data = {"mime_type": img.type, "data": img.getvalue()}
+        text = ai(prompt, data)
 
-        # Save history
-        con = db(); cur = con.cursor()
-        cur.execute("""
-            INSERT INTO history(username,date,meal,details)
-            VALUES (?,?,?,?)
-        """, (
-            st.session_state.username,
-            datetime.now().strftime("%d-%m-%Y %H:%M"),
-            text.split("\n")[0],
-            text
-        ))
-        con.commit(); con.close()
+        # Save calories
+        cal = re.search(r'Calories:\s*(\d+)', text)
+        if cal:
+            st.session_state.daily_cal += int(cal.group(1))
 
-        st.markdown(f"<div class='food-box'>{text}</div>", unsafe_allow_html=True)
-
-        # ------------------------------
-        # PIE CHART (GUARANTEED)
-        # ------------------------------
-        p, c, f = extract_macros(text)
-
-        if all(v is not None for v in [p, c, f]) and (p + c + f) > 0:
-            fig, ax = plt.subplots(figsize=(5,5), facecolor="#121212")
-            ax.set_facecolor("#121212")
-            ax.pie(
-                [p, c, f],
-                labels=["Protein", "Carbs", "Fat"],
-                autopct="%1.1f%%",
-                startangle=90,
-                textprops={"color": "white"}
-            )
-            ax.set_title("Macronutrient Distribution", color="white")
-            st.pyplot(fig)
+        # Health indicator
+        if "Unhealthy" in text:
+            st.error("🔴 Unhealthy Food")
+        elif "Moderate" in text:
+            st.warning("🟡 Consume in Moderation")
         else:
-            st.warning("⚠ Macronutrient data not detected – pie chart unavailable")
+            st.success("🟢 Healthy Choice")
 
-        st.download_button(
-            "📄 Download PDF",
-            generate_pdf(text),
-            "nutrivision_report.pdf"
-        )
+        st.markdown(text)
+
+        p, c, f = extract_macros(text)
+        if p and c and f:
+            fig, ax = plt.subplots()
+            ax.pie([p,c,f], labels=["Protein","Carbs","Fat"], autopct="%1.1f%%")
+            ax.set_title("Macronutrient Distribution")
+            st.pyplot(fig)
+
+        st.download_button("📄 Download PDF", pdf(text), "nutrivision_report.pdf")
+
+        con = db(); cur = con.cursor()
+        cur.execute("INSERT INTO history VALUES (NULL,?,?,?,?)",
+                    (st.session_state.username,
+                     datetime.now().strftime("%d-%m-%Y %H:%M"),
+                     text.splitlines()[0],
+                     text))
+        con.commit(); con.close()
 
 # ------------------------------
 # HISTORY
 # ------------------------------
-st.markdown("## 📜 History")
-
+st.subheader("📜 History")
 con = db(); cur = con.cursor()
-cur.execute("""
-    SELECT date, meal, details
-    FROM history
-    WHERE username=?
-    ORDER BY id DESC
-""", (st.session_state.username,))
-rows = cur.fetchall()
-con.close()
-
-for d, m, det in rows:
+cur.execute("SELECT date, meal, details FROM history WHERE username=? ORDER BY id DESC",
+            (st.session_state.username,))
+for d,m,t in cur.fetchall():
     with st.expander(f"{m} | {d}"):
-        st.text(det)
+        st.text(t)
+con.close()
