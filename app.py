@@ -178,7 +178,7 @@ st.markdown(f"### Welcome, {st.session_state.username}")
 st.info(f"🔥 Calories Consumed Today: {st.session_state.daily_used} / {daily_limit} kcal")
 
 if img:
-    st.image(Image.open(img), use_container_width=True)
+    st.image(Image.open(img), width="stretch")
 
 # -------------------------------------------------
 # HELPERS
@@ -193,11 +193,7 @@ def extract_macros(text):
         return None, None, None
 
 def extract_calories(text):
-    match = re.search(
-        r'Total Calories.*?:\s*(\d+)\s*kcal',
-        text,
-        re.IGNORECASE
-    )
+    match = re.search(r'Total Calories.*?:\s*(\d+)\s*kcal', text, re.IGNORECASE)
     return int(match.group(1)) if match else 0
 
 def ai(prompt, image):
@@ -212,13 +208,12 @@ def generate_pdf(text, username):
     doc = SimpleDocTemplate(buf, pagesize=letter)
     styles = getSampleStyleSheet()
 
-    if "MyTitle" not in styles:
-        styles.add(ParagraphStyle(
-            name="MyTitle",
-            fontSize=18,
-            alignment=1,
-            spaceAfter=20
-        ))
+    styles.add(ParagraphStyle(
+        name="MyTitle",
+        fontSize=18,
+        alignment=1,
+        spaceAfter=20
+    ))
 
     story = []
     story.append(Paragraph("NutriVision – Nutrition Analysis Report", styles["MyTitle"]))
@@ -236,13 +231,13 @@ def generate_pdf(text, username):
     return buf
 
 # -------------------------------------------------
-# PROMPT (FINAL)
+# PROMPT (STRONG & STRICT)
 # -------------------------------------------------
 prompt = f"""
 You are a certified clinical nutritionist and food safety expert.
 
 Analyze the given food image carefully and respond in a STRICTLY STRUCTURED FORMAT.
-Do NOT skip any section.
+You MUST complete EVERY section. Do NOT skip anything.
 
 Quantity Consumed: {qty}
 
@@ -254,12 +249,12 @@ Meal Name:
 ---------------------------------
 INGREDIENT ANALYSIS
 ---------------------------------
-List ALL major ingredients used in the food.
+List ALL major ingredients detected in the food.
 
 For EACH ingredient mention:
 • Ingredient Name
 • Healthy or Unhealthy
-• Clear reason
+• Clear reason (deep-fried, excess oil, refined flour, high sugar, preservatives, excess salt, artificial color, etc.)
 
 ---------------------------------
 CALORIE BREAKDOWN
@@ -269,10 +264,10 @@ CALORIE BREAKDOWN
 ---------------------------------
 TOTAL CALORIES
 ---------------------------------
-Total Calories of the meal (for given quantity): ___ kcal
+Total Calories of the meal (for the given quantity): ___ kcal
 
 ---------------------------------
-MACRONUTRIENT PROFILE
+MACRONUTRIENT PROFILE (numeric only)
 ---------------------------------
 Protein: ___ g
 Carbs: ___ g
@@ -284,21 +279,21 @@ OVERALL HEALTH ASSESSMENT
 Healthiness Level:
 Healthy / Moderately Healthy / Unhealthy
 
-Explain WHY.
+Explain clearly WHY.
 
 ---------------------------------
 SUITABILITY FOR KIDS
 ---------------------------------
 Suitable for Kids: Yes / No
 
-Explain reason clearly.
+Explain the reason clearly.
 
 ---------------------------------
 DIETARY ADVICE
 ---------------------------------
-Give 2–3 suggestions.
+Give 2–3 practical suggestions to make this food healthier.
 
-Respond ONLY in this format.
+Respond ONLY in this exact format.
 """
 
 # -------------------------------------------------
@@ -318,11 +313,9 @@ if st.button("Analyse Food"):
 
         p, c, f = extract_macros(text)
         if p is not None:
-            fig, ax = plt.subplots()
-            ax.pie([p, c, f],
-                   labels=["Protein", "Carbs", "Fat"],
-                   autopct="%1.1f%%",
-                   startangle=90)
+            fig, ax = plt.subplots(figsize=(4,4))
+            ax.pie([p, c, f], labels=["Protein","Carbs","Fat"],
+                   autopct="%1.1f%%", startangle=90)
             ax.set_title("Macronutrient Distribution")
             st.pyplot(fig)
 
@@ -331,6 +324,38 @@ if st.button("Analyse Food"):
             generate_pdf(text, st.session_state.username),
             "nutrivision_report.pdf"
         )
+
+        # ------------------------------
+        # WHATSAPP SHARE
+        # ------------------------------
+        whatsapp_text = f"""
+🥗 NutriVision – Nutrition Analysis Report
+
+User: {st.session_state.username}
+Total Calories: {calories} kcal
+
+Generated using an AI-Based Food Calorie Estimation System
+Final Year Project – PDA College of Engineering
+"""
+
+        st.markdown(f"""
+        <div style="text-align:center; margin-top:15px;">
+            <a href="https://wa.me/?text={whatsapp_text.replace(' ', '%20').replace(chr(10), '%0A')}"
+               target="_blank">
+                <button style="
+                    background:#25D366;
+                    color:white;
+                    border:none;
+                    padding:10px 20px;
+                    border-radius:14px;
+                    font-size:15px;
+                    font-weight:600;
+                    cursor:pointer;">
+                    📤 Share Report on WhatsApp
+                </button>
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
 
 # -------------------------------------------------
 # FOOTER
@@ -344,4 +369,3 @@ Final Year – Information Science & Engineering<br>
 PDA College of Engineering © 2025
 </div>
 """, unsafe_allow_html=True)
-
