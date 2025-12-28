@@ -12,14 +12,14 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
-# ------------------------------
+# -------------------------------------------------
 # PAGE CONFIG
-# ------------------------------
+# -------------------------------------------------
 st.set_page_config(page_title="NutriVision", page_icon="🥗", layout="wide")
 
-# ------------------------------
+# -------------------------------------------------
 # DARK UI
-# ------------------------------
+# -------------------------------------------------
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -56,9 +56,9 @@ input {
 </style>
 """, unsafe_allow_html=True)
 
-# ------------------------------
+# -------------------------------------------------
 # DATABASE
-# ------------------------------
+# -------------------------------------------------
 DB = "nutrivision.db"
 
 def db():
@@ -88,9 +88,9 @@ def init_db():
 
 init_db()
 
-# ------------------------------
+# -------------------------------------------------
 # AUTH
-# ------------------------------
+# -------------------------------------------------
 def hash_pass(p):
     return hashlib.sha256(p.encode()).hexdigest()
 
@@ -101,15 +101,15 @@ if "username" not in st.session_state:
 if "daily_used" not in st.session_state:
     st.session_state.daily_used = 0
 
-# ------------------------------
+# -------------------------------------------------
 # API KEY
-# ------------------------------
+# -------------------------------------------------
 load_dotenv()
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# ------------------------------
-# LOGIN
-# ------------------------------
+# -------------------------------------------------
+# LOGIN / SIGNUP
+# -------------------------------------------------
 if not st.session_state.logged_in:
     st.markdown("## 🔐 NutriVision Authentication")
     t1, t2 = st.tabs(["Login", "Create Account"])
@@ -147,13 +147,13 @@ if not st.session_state.logged_in:
 
     st.stop()
 
-# ==========================================================
-# ================== MAIN APP (AFTER LOGIN) =================
-# ==========================================================
+# =================================================
+# MAIN APP
+# =================================================
 
-# ------------------------------
+# -------------------------------------------------
 # SIDEBAR
-# ------------------------------
+# -------------------------------------------------
 st.sidebar.title("📤 Upload Food / Beverage")
 img = st.sidebar.file_uploader("Food Image", ["jpg","jpeg","png"])
 qty = st.sidebar.text_input("Quantity", "100g")
@@ -170,20 +170,19 @@ if st.sidebar.button("🚪 Logout"):
     st.session_state.logged_in = False
     st.rerun()
 
-# ------------------------------
+# -------------------------------------------------
 # HEADER
-# ------------------------------
+# -------------------------------------------------
 st.markdown("# 🥗 NutriVision")
 st.markdown(f"### Welcome, {st.session_state.username}")
-
 st.info(f"🔥 Calories Consumed Today: {st.session_state.daily_used} / {daily_limit} kcal")
 
 if img:
     st.image(Image.open(img), use_container_width=True)
 
-# ------------------------------
+# -------------------------------------------------
 # HELPERS
-# ------------------------------
+# -------------------------------------------------
 def extract_macros(text):
     try:
         p = int(re.search(r'Protein:\s*(\d+)', text).group(1))
@@ -194,16 +193,20 @@ def extract_macros(text):
         return None, None, None
 
 def extract_calories(text):
-    m = re.search(r'(\d+)\s*kcal', text.lower())
-    return int(m.group(1)) if m else 0
+    match = re.search(
+        r'Total Calories.*?:\s*(\d+)\s*kcal',
+        text,
+        re.IGNORECASE
+    )
+    return int(match.group(1)) if match else 0
 
 def ai(prompt, image):
     model = genai.GenerativeModel("models/gemini-2.5-flash")
     return model.generate_content([prompt, image]).text
 
-# ------------------------------
-# PDF GENERATION
-# ------------------------------
+# -------------------------------------------------
+# PDF
+# -------------------------------------------------
 def generate_pdf(text, username):
     buf = BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=letter)
@@ -228,46 +231,79 @@ def generate_pdf(text, username):
             story.append(Paragraph(line, styles["Normal"]))
             story.append(Spacer(1, 6))
 
-    story.append(Spacer(1, 12))
-    story.append(Paragraph(
-        "<i>Note: Nutritional values are estimated using AI-based analysis.</i>",
-        styles["Normal"]
-    ))
-
     doc.build(story)
     buf.seek(0)
     return buf
 
-# ------------------------------
-# PROMPT
-# ------------------------------
+# -------------------------------------------------
+# PROMPT (FINAL)
+# -------------------------------------------------
 prompt = f"""
-You are an expert nutritionist.
+You are a certified clinical nutritionist and food safety expert.
 
-Quantity: {qty}
+Analyze the given food image carefully and respond in a STRICTLY STRUCTURED FORMAT.
+Do NOT skip any section.
 
+Quantity Consumed: {qty}
+
+---------------------------------
+MEAL IDENTIFICATION
+---------------------------------
 Meal Name:
 
-Ingredients and Calories:
-1. Ingredient - calories
+---------------------------------
+INGREDIENT ANALYSIS
+---------------------------------
+List ALL major ingredients used in the food.
 
-Total Calories: 0 kcal
+For EACH ingredient mention:
+• Ingredient Name
+• Healthy or Unhealthy
+• Clear reason
 
-Macronutrient Profile:
-Protein: 0
-Carbs: 0
-Fat: 0
+---------------------------------
+CALORIE BREAKDOWN
+---------------------------------
+1. Ingredient – ___ kcal
 
-Healthiness:
-Healthy / Moderate / Unhealthy
+---------------------------------
+TOTAL CALORIES
+---------------------------------
+Total Calories of the meal (for given quantity): ___ kcal
 
-Is it Suitable for Kids:
-Yes / No
+---------------------------------
+MACRONUTRIENT PROFILE
+---------------------------------
+Protein: ___ g
+Carbs: ___ g
+Fat: ___ g
+
+---------------------------------
+OVERALL HEALTH ASSESSMENT
+---------------------------------
+Healthiness Level:
+Healthy / Moderately Healthy / Unhealthy
+
+Explain WHY.
+
+---------------------------------
+SUITABILITY FOR KIDS
+---------------------------------
+Suitable for Kids: Yes / No
+
+Explain reason clearly.
+
+---------------------------------
+DIETARY ADVICE
+---------------------------------
+Give 2–3 suggestions.
+
+Respond ONLY in this format.
 """
 
-# ------------------------------
+# -------------------------------------------------
 # ANALYSIS
-# ------------------------------
+# -------------------------------------------------
 if st.button("Analyse Food"):
     if not img:
         st.warning("Upload image first")
@@ -281,7 +317,7 @@ if st.button("Analyse Food"):
         st.markdown(f"<div class='food-box'>{text}</div>", unsafe_allow_html=True)
 
         p, c, f = extract_macros(text)
-        if p is not None and c is not None and f is not None:
+        if p is not None:
             fig, ax = plt.subplots()
             ax.pie([p, c, f],
                    labels=["Protein", "Carbs", "Fat"],
@@ -290,60 +326,21 @@ if st.button("Analyse Food"):
             ax.set_title("Macronutrient Distribution")
             st.pyplot(fig)
 
-        # ------------------------------
-        # DOWNLOAD PDF
-        # ------------------------------
         st.download_button(
-            "📄 Download Nutrition Analysis Report (PDF)",
+            "📄 Download Nutrition Report (PDF)",
             generate_pdf(text, st.session_state.username),
-            "nutrivision_analysis_report.pdf"
+            "nutrivision_report.pdf"
         )
 
-        # ------------------------------
-        # SHARE ON WHATSAPP (PROFESSIONAL TEXT)
-        # ------------------------------
-        whatsapp_text = f"""
-🥗 NutriVision – Nutrition Analysis Report
-
-User: {st.session_state.username}
-Estimated Calories: {calories} kcal
-
-This report was generated using an AI-Based Food Calorie Estimation System
-developed as a Final Year Project.
-
-Department of Information Science & Engineering
-PDA College of Engineering © 2025
-"""
-
-        st.markdown(f"""
-        <div style="text-align:center; margin-top:12px;">
-            <a href="https://wa.me/?text={whatsapp_text.replace(' ', '%20').replace(chr(10), '%0A')}"
-               target="_blank">
-                <button style="
-                    background:#25D366;
-                    color:white;
-                    border:none;
-                    padding:10px 18px;
-                    border-radius:14px;
-                    font-size:15px;
-                    font-weight:600;
-                    cursor:pointer;">
-                    📤 Share Report on WhatsApp
-                </button>
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
-
-# ------------------------------
-# FOOTER (AFTER LOGIN ONLY)
-# ------------------------------
+# -------------------------------------------------
+# FOOTER
+# -------------------------------------------------
 st.markdown("""
-<hr style="border:1px solid #2e3b4e; margin-top:40px;">
-
-<div style="text-align:center; color:#B0BEC5; font-size:14px; line-height:1.6;">
-    <b>Developed By</b><br>
-    Aishwarya Patil · C. G. Balasubramanyam Singh · Madhushree · Pradeep S<br>
-    Final Year – Information Science & Engineering<br>
-    PDA College of Engineering © 2025
+<hr>
+<div style="text-align:center; color:#B0BEC5;">
+<b>Developed By</b><br>
+Aishwarya Patil · C. G. Balasubramanyam Singh · Madhushree · Pradeep S<br>
+Final Year – Information Science & Engineering<br>
+PDA College of Engineering © 2025
 </div>
 """, unsafe_allow_html=True)
