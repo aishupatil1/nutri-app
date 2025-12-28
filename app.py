@@ -201,7 +201,7 @@ def ai(prompt, image):
     return model.generate_content([prompt, image]).text
 
 # -------------------------------------------------
-# PDF
+# PDF GENERATION (FIXED)
 # -------------------------------------------------
 def generate_pdf(text, username):
     buf = BytesIO()
@@ -228,16 +228,16 @@ def generate_pdf(text, username):
 
     doc.build(story)
     buf.seek(0)
-    return buf
+    return buf.getvalue()   # 🔥 FIX: return BYTES
 
 # -------------------------------------------------
-# PROMPT (STRONG & STRICT)
+# PROMPT (STRONG)
 # -------------------------------------------------
 prompt = f"""
 You are a certified clinical nutritionist and food safety expert.
 
 Analyze the given food image carefully and respond in a STRICTLY STRUCTURED FORMAT.
-You MUST complete EVERY section. Do NOT skip anything.
+You MUST complete EVERY section.
 
 Quantity Consumed: {qty}
 
@@ -249,12 +249,12 @@ Meal Name:
 ---------------------------------
 INGREDIENT ANALYSIS
 ---------------------------------
-List ALL major ingredients detected in the food.
+List ALL major ingredients.
 
-For EACH ingredient mention:
+For EACH ingredient:
 • Ingredient Name
 • Healthy or Unhealthy
-• Clear reason (deep-fried, excess oil, refined flour, high sugar, preservatives, excess salt, artificial color, etc.)
+• Reason
 
 ---------------------------------
 CALORIE BREAKDOWN
@@ -267,7 +267,7 @@ TOTAL CALORIES
 Total Calories of the meal (for the given quantity): ___ kcal
 
 ---------------------------------
-MACRONUTRIENT PROFILE (numeric only)
+MACRONUTRIENT PROFILE
 ---------------------------------
 Protein: ___ g
 Carbs: ___ g
@@ -279,21 +279,21 @@ OVERALL HEALTH ASSESSMENT
 Healthiness Level:
 Healthy / Moderately Healthy / Unhealthy
 
-Explain clearly WHY.
+Explain WHY.
 
 ---------------------------------
 SUITABILITY FOR KIDS
 ---------------------------------
 Suitable for Kids: Yes / No
 
-Explain the reason clearly.
+Explain reason.
 
 ---------------------------------
 DIETARY ADVICE
 ---------------------------------
-Give 2–3 practical suggestions to make this food healthier.
+Give 2–3 suggestions.
 
-Respond ONLY in this exact format.
+Respond ONLY in this format.
 """
 
 # -------------------------------------------------
@@ -319,22 +319,24 @@ if st.button("Analyse Food"):
             ax.set_title("Macronutrient Distribution")
             st.pyplot(fig)
 
+        # -------- PDF DOWNLOAD (FIXED) --------
+        pdf_bytes = generate_pdf(text, st.session_state.username)
+
         st.download_button(
-            "📄 Download Nutrition Report (PDF)",
-            generate_pdf(text, st.session_state.username),
-            "nutrivision_report.pdf"
+            label="📄 Download Nutrition Report (PDF)",
+            data=pdf_bytes,
+            file_name="nutrivision_report.pdf",
+            mime="application/pdf"
         )
 
-        # ------------------------------
-        # WHATSAPP SHARE
-        # ------------------------------
+        # -------- WHATSAPP SHARE --------
         whatsapp_text = f"""
 🥗 NutriVision – Nutrition Analysis Report
 
 User: {st.session_state.username}
 Total Calories: {calories} kcal
 
-Generated using an AI-Based Food Calorie Estimation System
+AI-Based Food Calorie Estimation System
 Final Year Project – PDA College of Engineering
 """
 
